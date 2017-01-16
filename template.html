@@ -2,7 +2,35 @@
 <html>
   <head>
     <title>paper plane</title>
+    <style>
+      html, body {
+        height: 100%;
+        margin: 0;
+      }
+
+      .container {
+        min-height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .inner {
+        flex: 0 0 auto;
+        text-align: center;
+      }
+    </style>
   </head>
+
   <body>
+    <div class="container">
+      <div class="inner">
+        <canvas></canvas>
+        <p>
+          press a &amp; d<br>
+          space resets
+        </p>
+      </div>
+    </div>
   </body>
 </html>

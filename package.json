@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "webpack-dev-server",
     "build": "rm -rf build/ && webpack",
-    "deploy": "NODE_ENV=production npm run build && firebase deploy"
+    "deploy": "NODE_ENV=production npm run build && surge -d sheathed-wings.surge.sh -p ./build"
   },
   "author": "Thomas Boyt <me@thomasboyt.com>",
   "license": "MIT",
@@ -26,5 +26,9 @@
     "webpack": "^1.13.3",
     "webpack-create-vendor-chunk": "^0.1.1",
     "webpack-dev-server": "^1.16.2"
+  },
+  "dependencies": {
+    "@types/sat": "0.0.28",
+    "sat": "^0.6.0"
   }
 }
