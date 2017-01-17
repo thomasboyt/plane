@@ -3,6 +3,9 @@ import * as SAT from 'sat';
 import {registerListeners, keysDown} from './util/inputter';
 import keyCodes from './util/keyCodes';
 import {degreesToRadians, calcVectorRadians} from './util/math';
+import scaleCanvas from './util/scaleCanvas';
+
+import MusicPlayer from './music';
 
 const WIDTH = 320;
 const HEIGHT = 240;
@@ -30,20 +33,27 @@ interface Plane {
   angle: number;
 }
 
+enum GameState {
+  Title,
+  Playing,
+  Dead,
+};
+
 class State {
-  dead: boolean;
+  gameState: GameState = GameState.Title;
 
   blocks: Block[];
   plane: Plane;
 
   points: number;
+  musicPlayer: MusicPlayer;
 
-  constructor() {
-    this.reset();
+  constructor(musicPlayer: MusicPlayer) {
+    this.musicPlayer = musicPlayer;
   }
 
-  reset() {
-    this.dead = false;
+  startGame() {
+    this.gameState = GameState.Playing;
 
     this.blocks = [
       {x: 0, y: 100, width: 160, height: 40},
@@ -62,9 +72,18 @@ class State {
   }
 
   update(dt: number, keysDown: Set<number>) {
-    if (this.dead) {
+    if (this.gameState === GameState.Title) {
       if (keysDown.has(keyCodes.SPACE)) {
-        this.reset();
+        this.musicPlayer.play();
+        this.startGame();
+      }
+
+      return;
+    }
+
+    if (this.gameState === GameState.Dead) {
+      if (keysDown.has(keyCodes.SPACE)) {
+        this.startGame();
       }
 
       return;
@@ -136,7 +155,7 @@ class State {
     }
 
     if (collided) {
-      this.dead = true;
+      this.gameState = GameState.Dead;
       return;
     }
 
@@ -187,6 +206,15 @@ function draw(state: State, canvas: HTMLCanvasElement) {
 
   ctx.fillStyle = 'white';
 
+  if (state.gameState === GameState.Title) {
+    ctx.font = '32px serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('a game about a plane', WIDTH / 2, 90);
+    ctx.font = '20px serif';
+    ctx.fillText('press space, then a & d', WIDTH / 2, HEIGHT - 60);
+    return;
+  }
+
   // Draw platforms + plane (which scroll)
   ctx.save();
   ctx.translate(0, -(state.plane.y - CAMERA_OFFSET));
@@ -221,13 +249,14 @@ function runLoop(state: State, canvas: HTMLCanvasElement) {
 }
 
 function main() {
+  const musicPlayer = new MusicPlayer();
+  musicPlayer.install();
+
   const canvas = document.querySelector('canvas')!;
   registerListeners();
+  scaleCanvas(canvas, WIDTH, HEIGHT);
 
-  canvas.width = WIDTH;
-  canvas.height = HEIGHT;
-
-  const state = new State();
+  const state = new State(musicPlayer);
 
   runLoop(state, canvas);
 }
