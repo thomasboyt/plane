@@ -1,5 +1,6 @@
 export default class MusicPlayer {
   player: any;
+  autoplay: boolean = false;
 
   install() {
     const tub = document.createElement('div');
@@ -21,7 +22,10 @@ export default class MusicPlayer {
           onReady: () => {
             // force preloading
             this.player.seekTo(0);
-            this.player.pauseVideo();
+
+            if (!this.autoplay) {
+              this.player.pauseVideo();
+            }
 
             setInterval(() => {
               if (this.player.getCurrentTime() >= 81) {
@@ -30,7 +34,7 @@ export default class MusicPlayer {
             }, 250);
           }
         },
-      })
+      });
     }
 
     const tag = document.createElement('script');
@@ -39,6 +43,11 @@ export default class MusicPlayer {
   }
 
   play() {
-    this.player.playVideo();
+    // this is false when the player hasn't loaded yet
+    if (this.player && this.player.playVideo) {
+      this.player.playVideo();
+    } else {
+      this.autoplay = true;
+    }
   }
 }
