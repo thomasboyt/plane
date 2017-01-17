@@ -39,27 +39,82 @@ enum GameState {
   Dead,
 };
 
+enum BlockSide {
+  Left,
+  Right,
+};
+
+class BlockFriend {
+  blocks: Block[];
+  nextBlockInterval: number = 100;
+  nextBlockSide: BlockSide = BlockSide.Right;
+
+  constructor() {
+    this.blocks = [
+      {x: 0, y: 100, width: 160, height: 40},
+    ];
+  }
+
+  update(cameraTop: number) {
+    // Clean up offscreen blocks
+    this.blocks = this.blocks.filter((block) => {
+      const blockBottom = block.y + block.height;
+      return cameraTop <= blockBottom;
+    });
+
+    // Create blocks once they are visible and spawn the next one
+    const cameraBottom = cameraTop + HEIGHT;
+    this.maybeGenBlock(cameraBottom);
+  }
+
+  maybeGenBlock(cameraBottom: number) {
+    const lastBlock = this.blocks.slice(-1)[0];
+
+    if (cameraBottom - (lastBlock.y + lastBlock.height) >= this.nextBlockInterval) {
+      if (this.nextBlockSide === BlockSide.Left) {
+        this.blocks.push({
+          x: 0,
+          y: cameraBottom,
+          width: 160,
+          height: 40,
+        });
+
+        this.nextBlockSide = BlockSide.Right;
+
+      } else {
+        this.blocks.push({
+          x: WIDTH - 160,
+          y: cameraBottom,
+          width: 160,
+          height: 40,
+        });
+
+        this.nextBlockSide = BlockSide.Left;
+      }
+    }
+  }
+}
+
 class State {
   gameState: GameState = GameState.Title;
 
-  blocks: Block[];
   plane: Plane;
 
   points: number;
   musicPlayer: MusicPlayer;
+  blockFriend: BlockFriend;
 
   constructor(musicPlayer: MusicPlayer) {
     this.musicPlayer = musicPlayer;
   }
 
+  get blocks() {
+    return this.blockFriend.blocks;
+  }
+
   startGame() {
     this.gameState = GameState.Playing;
-
-    this.blocks = [
-      {x: 0, y: 100, width: 160, height: 40},
-      {x: WIDTH - 160, y: 200, width: 160, height: 40},
-      {x: 0, y: 300, width: 160, height: 40},
-    ];
+    this.blockFriend = new BlockFriend();
 
     this.plane = {
       x: 40,
@@ -162,13 +217,8 @@ class State {
     /*
      * Update blocks
      */
-
-    // Clean up offscreen blocks
-    this.blocks = this.blocks.filter((block) => {
-      const cameraTop = this.plane.y - CAMERA_OFFSET;
-      const blockBottom = block.y + block.height;
-      return cameraTop <= blockBottom;
-    });
+    const cameraTop = this.plane.y - CAMERA_OFFSET;
+    this.blockFriend.update(cameraTop);
 
     // TODO: Spawn more blocks using some logic!!
 
@@ -231,7 +281,15 @@ function draw(state: State, canvas: HTMLCanvasElement) {
   ctx.fillRect(0, 0, WALL_WIDTH, HEIGHT);
   ctx.fillRect(WIDTH - WALL_WIDTH, 0, WALL_WIDTH, HEIGHT);
 
-  // TODO: Draw HUD
+  if (state.gameState === GameState.Dead) {
+    ctx.font = '24px serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'white';
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 4;
+    ctx.strokeText('press space to play again :)', WIDTH / 2, HEIGHT / 2 + 50);
+    ctx.fillText('press space to play again :)', WIDTH / 2, HEIGHT / 2 + 50);
+  }
 }
 
 let then = Date.now();
