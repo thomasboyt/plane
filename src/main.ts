@@ -1,4 +1,6 @@
 import * as SAT from 'sat';
+import * as I from 'immutable';
+import makeRecordFactory, {Record} from 'nightshirt';
 
 import {registerListeners, keysDown} from './util/inputter';
 import keyCodes from './util/keyCodes';
@@ -19,20 +21,6 @@ const MAX_ANGLE = degreesToRadians(180 - ABS_MAX_ANGLE_DEG);
 
 const ROTATION_SPEED = degreesToRadians(180);
 
-interface Block {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-interface Plane {
-  x: number;
-  y: number;
-  speed: number;
-  angle: number;
-}
-
 enum GameState {
   Title,
   Playing,
@@ -44,189 +32,180 @@ enum BlockSide {
   Right,
 };
 
-class BlockFriend {
-  blocks: Block[];
-  nextBlockInterval: number = 100;
-  nextBlockSide: BlockSide = BlockSide.Right;
-
-  constructor() {
-    this.blocks = [
-      {x: 0, y: 100, width: 160, height: 40},
-    ];
-  }
-
-  update(cameraTop: number) {
-    // Clean up offscreen blocks
-    this.blocks = this.blocks.filter((block) => {
-      const blockBottom = block.y + block.height;
-      return cameraTop <= blockBottom;
-    });
-
-    // Create blocks once they are visible and spawn the next one
-    const cameraBottom = cameraTop + HEIGHT;
-    this.maybeGenBlock(cameraBottom);
-  }
-
-  maybeGenBlock(cameraBottom: number) {
-    const lastBlock = this.blocks.slice(-1)[0];
-
-    if (cameraBottom - (lastBlock.y + lastBlock.height) >= this.nextBlockInterval) {
-      if (this.nextBlockSide === BlockSide.Left) {
-        this.blocks.push({
-          x: 0,
-          y: cameraBottom,
-          width: 160,
-          height: 40,
-        });
-
-        this.nextBlockSide = BlockSide.Right;
-
-      } else {
-        this.blocks.push({
-          x: WIDTH - 160,
-          y: cameraBottom,
-          width: 160,
-          height: 40,
-        });
-
-        this.nextBlockSide = BlockSide.Left;
-      }
-    }
-  }
+interface IBlock {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
-class State {
-  gameState: GameState = GameState.Title;
+interface IPlane {
+  x: number;
+  y: number;
+  speed: number;
+  angle: number;
+}
 
-  plane: Plane;
-
+interface IState {
+  gameState: GameState;
+  plane: Record<IPlane>;
   points: number;
-  musicPlayer: MusicPlayer;
-  blockFriend: BlockFriend;
+  blocks: I.List<Record<IBlock>>;
+  nextBlockInterval: number;
+  nextBlockSide: BlockSide;
+}
 
-  constructor(musicPlayer: MusicPlayer) {
-    this.musicPlayer = musicPlayer;
-  }
+function createRecord<T>(opts: T): Record<T> {
+  const RecordClass = makeRecordFactory<T>(opts);
+  return new RecordClass();
+}
 
-  get blocks() {
-    return this.blockFriend.blocks;
-  }
-
-  startGame() {
-    this.gameState = GameState.Playing;
-    this.blockFriend = new BlockFriend();
-
-    this.plane = {
+function getInitialState() {
+  const state = createRecord<IState>({
+    gameState: GameState.Title,
+    plane: createRecord<IPlane>({
       x: 40,
       y: 20,
       speed: 100,
       angle: MIN_ANGLE,
-    };
+    }),
+    points: 0,
+    blocks: I.List([
+      createRecord<IBlock>({x: 0, y: 100, width: 160, height: 40}),
+    ]),
+    nextBlockInterval: 100,
+    nextBlockSide: BlockSide.Right,
+  });
 
-    this.points = 0;
-  }
-
-  update(dt: number, keysDown: Set<number>) {
-    if (this.gameState === GameState.Title) {
-      if (keysDown.has(keyCodes.SPACE)) {
-        this.musicPlayer.play();
-        this.startGame();
-      }
-
-      return;
-    }
-
-    if (this.gameState === GameState.Dead) {
-      if (keysDown.has(keyCodes.SPACE)) {
-        this.startGame();
-      }
-
-      return;
-    }
-
-    /*
-     * Handle input
-     */
-
-    if (keysDown.has(keyCodes.A)) {
-      // turn left
-      this.plane.angle -= ROTATION_SPEED * dt;
-    }
-
-    if (keysDown.has(keyCodes.D)) {
-      // turn right
-      this.plane.angle += ROTATION_SPEED * dt;
-    }
-
-    if (this.plane.angle > MAX_ANGLE) {
-      this.plane.angle = MAX_ANGLE;
-    }
-
-    if (this.plane.angle < MIN_ANGLE) {
-      this.plane.angle = MIN_ANGLE;
-    }
-
-    /*
-     * Update plane position
-     */
-
-    const {x, y} = calcVectorRadians(this.plane.speed * dt, this.plane.angle);
-    this.plane.x += x;
-    this.plane.y += y;
-
-    /*
-     * Test collisions
-     */
-
-    const planeCollider = new SAT.Polygon(new SAT.Vector(this.plane.x, this.plane.y), [
-      new SAT.Vector(-PLANE_SIDE_LENGTH / 2, -PLANE_SIDE_LENGTH / 2),
-      new SAT.Vector(-PLANE_SIDE_LENGTH / 2, PLANE_SIDE_LENGTH / 2),
-      new SAT.Vector(PLANE_SIDE_LENGTH / 2, 0),
-    ]);
-    planeCollider.rotate(this.plane.angle);
-
-    const blockColliders = this.blocks.map((block) => {
-      return new SAT.Box(new SAT.Vector(block.x, block.y), block.width, block.height).toPolygon();
-    });
-
-    let resp: SAT.Response;
-    let collided: boolean = false;
-    for (let blockCollider of blockColliders) {
-      resp = new SAT.Response();
-      collided = SAT.testPolygonPolygon(planeCollider, blockCollider);
-      if (collided) {
-        break;
-      }
-    }
-
-    if (!collided) {
-      // check collision with walls
-      for (let point of planeCollider.calcPoints) {
-        const x = point.x + planeCollider.pos.x;
-        if (x < WALL_WIDTH || x > WIDTH - WALL_WIDTH) {
-          collided = true;
-        }
-      }
-    }
-
-    if (collided) {
-      this.gameState = GameState.Dead;
-      return;
-    }
-
-    /*
-     * Update blocks
-     */
-    const cameraTop = this.plane.y - CAMERA_OFFSET;
-    this.blockFriend.update(cameraTop);
-
-    // TODO: Spawn more blocks using some logic!!
-
-    // TODO: Increment points when player passes a block
-  }
+  return state;
 }
 
-function drawPlane(ctx: CanvasRenderingContext2D, plane: Plane) {
+function startGame(state: Record<IState>): Record<IState> {
+  return getInitialState().set('gameState', GameState.Playing);
+}
+
+function update(state: Record<IState>, dt: number, keysDown: Set<number>): Record<IState> {
+  if (this.gameState === GameState.Title || this.gameState === GameState.Dead) {
+    if (keysDown.has(keyCodes.SPACE)) {
+      return startGame(state);
+    }
+
+    return state;
+  }
+
+  /*
+   * Handle input
+   */
+
+  if (keysDown.has(keyCodes.A)) {
+    // turn left
+    state = state.updateIn(['plane', 'angle'], (angle) => angle - ROTATION_SPEED * dt)
+  }
+
+  if (keysDown.has(keyCodes.D)) {
+    // turn right
+    state = state.updateIn(['plane', 'angle'], (angle) => angle + ROTATION_SPEED * dt)
+  }
+
+  if (state.plane.angle > MAX_ANGLE) {
+    state = state.setIn(['plane', 'angle'], MAX_ANGLE);
+  }
+
+  if (state.plane.angle < MIN_ANGLE) {
+    state = state.setIn(['plane', 'angle'], MIN_ANGLE);
+  }
+
+  /*
+   * Update plane position
+   */
+
+  const {x, y} = calcVectorRadians(state.plane.speed * dt, state.plane.angle);
+  state = state.updateIn(['plane', 'x'], (prevX) => prevX + x);
+  state = state.updateIn(['plane', 'y'], (prevY) => prevY + y);
+
+  /*
+   * Test collisions
+   */
+
+  const planeCollider = new SAT.Polygon(new SAT.Vector(state.plane.x, state.plane.y), [
+    new SAT.Vector(-PLANE_SIDE_LENGTH / 2, -PLANE_SIDE_LENGTH / 2),
+    new SAT.Vector(-PLANE_SIDE_LENGTH / 2, PLANE_SIDE_LENGTH / 2),
+    new SAT.Vector(PLANE_SIDE_LENGTH / 2, 0),
+  ]);
+  planeCollider.rotate(state.plane.angle);
+
+  const blockColliders = state.blocks.map((block) => {
+    return new SAT.Box(new SAT.Vector(block!.x, block!.y), block!.width, block!.height).toPolygon();
+  });
+
+  let collided = blockColliders.some((blockCollider) => {
+    return SAT.testPolygonPolygon(planeCollider, blockCollider!);
+  });
+
+  if (!collided) {
+    // check collision with walls
+    for (let point of planeCollider.calcPoints) {
+      const x = point.x + planeCollider.pos.x;
+      if (x < WALL_WIDTH || x > WIDTH - WALL_WIDTH) {
+        collided = true;
+      }
+    }
+  }
+
+  if (collided) {
+    return state.set('gameState', GameState.Dead);
+  }
+
+  /*
+    * Update blocks
+    */
+  const cameraTop = state.plane.y - CAMERA_OFFSET;
+  return updateBlocks(state, cameraTop);
+
+  // TODO: Increment points when player passes a block
+}
+
+function updateBlocks(state: Record<IState>, cameraTop: number): Record<IState> {
+  // Clean up offscreen blocks
+  const blocks = state.blocks.filter((block) => {
+    const blockBottom = block!.y + block!.height;
+    return cameraTop <= blockBottom;
+  }).toList();
+
+  state.set('blocks', blocks);
+
+  // Create blocks once they are visible and spawn the next one
+  const cameraBottom = cameraTop + HEIGHT;
+
+  const lastBlock = this.blocks.slice(-1)[0];
+
+  if (cameraBottom - (lastBlock.y + lastBlock.height) >= state.nextBlockInterval) {
+    if (state.nextBlockSide === BlockSide.Left) {
+      this.blocks.push({
+        x: 0,
+        y: cameraBottom,
+        width: 160,
+        height: 40,
+      });
+
+      state = state.set('nextBlockSide', BlockSide.Right);
+
+    } else {
+      this.blocks.push({
+        x: WIDTH - 160,
+        y: cameraBottom,
+        width: 160,
+        height: 40,
+      });
+
+      state = state.set('nextBlockSide', BlockSide.Left);
+    }
+  }
+
+  return state;
+}
+
+function drawPlane(ctx: CanvasRenderingContext2D, plane: IPlane) {
   // drawing the plane works like this:
   // 1. move to center of plane
   // 2. draw equillateral triangle around center
@@ -246,7 +225,7 @@ function drawPlane(ctx: CanvasRenderingContext2D, plane: Plane) {
   ctx.restore();
 }
 
-function draw(state: State, canvas: HTMLCanvasElement) {
+function draw(state: IState, canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext('2d')!;
 
   ctx.clearRect(0, 0, WIDTH, HEIGHT);
@@ -269,9 +248,9 @@ function draw(state: State, canvas: HTMLCanvasElement) {
   ctx.save();
   ctx.translate(0, -(state.plane.y - CAMERA_OFFSET));
 
-  for (let block of state.blocks) {
-    ctx.fillRect(block.x, block.y, block.width, block.height);
-  }
+  state.blocks.forEach((block) => {
+    ctx.fillRect(block!.x, block!.y, block!.width, block!.height);
+  });
 
   drawPlane(ctx, state.plane);
 
@@ -293,13 +272,13 @@ function draw(state: State, canvas: HTMLCanvasElement) {
 }
 
 let then = Date.now();
-function runLoop(state: State, canvas: HTMLCanvasElement) {
+function runLoop(prevState: any, canvas: HTMLCanvasElement) {
   requestAnimationFrame(() => {
     const now = Date.now();
     const dt = now - then;
     then = now;
 
-    state.update(dt / 1000, keysDown);
+    const state = update(prevState, dt / 1000, keysDown);
     draw(state, canvas);
 
     runLoop(state, canvas);
@@ -307,16 +286,11 @@ function runLoop(state: State, canvas: HTMLCanvasElement) {
 }
 
 function main() {
-  const musicPlayer = new MusicPlayer();
-  musicPlayer.install();
-
   const canvas = document.querySelector('canvas')!;
   registerListeners();
   scaleCanvas(canvas, WIDTH, HEIGHT);
 
-  const state = new State(musicPlayer);
-
-  runLoop(state, canvas);
+  runLoop(getInitialState(), canvas);
 }
 
 main();
